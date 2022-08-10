@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "name": "Linux/Windows",
+            "includePath": [
+                "${workspaceRoot}/../thirdparty/nugget/**",
+                "${workspaceRoot}/**",
+                "${workspaceRoot}/../psyq/**",
+                "${workspaceRoot}/../psyq",
+                "${workspaceRoot}/../psyq/include/**",
+                "${workspaceRoot}/../psyq/include",
+                "${workspaceRoot}/../psyq/lib",
+                "/home/phil/repos/nolibgs_hello_worlds/psyq/include",
+                "/home/phil/repos/nolibgs_hello_worlds/psyq/lib",
+                "/home/phil/repos/nolibgs_hello_worlds/psyq"
+
+            ],
+            "defines": [],
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "configurationProvider": "ms-vscode.makefile-tools",
+            "compilerPath": "/usr/bin/gcc"
+        }
+    ],
+    "version": 4
+}

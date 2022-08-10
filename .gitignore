@@ -1,0 +1,10 @@
+*.map
+*.ps-exe
+*.psexe
+*.o
+*.elf
+*.dep
+*.bin
+*.log
+*.cue
+psyq

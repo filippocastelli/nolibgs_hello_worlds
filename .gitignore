@@ -7,4 +7,6 @@
 *.bin
 *.log
 *.cue
+*.VCD
+*.iso
 psyq

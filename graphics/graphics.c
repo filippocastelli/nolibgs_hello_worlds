@@ -3,6 +3,10 @@
 #include <libgte.h>
 #include <libetc.h>
 #include <libgpu.h>
+#include <string.h>
+// cd
+#include <libcd.h>
+#include <malloc.h>
 
 #define VMODE 0 // NTSC
 #define SCREENXRES 320
@@ -11,10 +15,25 @@
 #define CENTERY SCREENYRES/2    // Center of screen on y
 #define MARGINX 0
 #define MARGINY 32
-#define FONTSIZE 8 * 7
-
-
+#define FONTSIZE 8 * 12
 #define OTLEN 8
+#define CD_SECTOR_SIZE 2048
+// converting bites to sectors
+#define BtoS(len) ((len + CD_SECTOR_SIZE -1 ) / CD_SECTOR_SIZE)
+
+static char *loadFile;
+static char *loadFileTIM;
+
+CdlFILE filePos = {0};
+CdlFILE filePosTIM = {0};
+// using an array instead of free memory
+static unsigned char ramAddr[0x40000];
+
+u_long *dataBuffer;
+
+u_char CtrlResult[8];
+int CDreadOK = 0;
+int CDreadResult = 0;
 
 DISPENV disp[2];
 DRAWENV draw[2];
@@ -24,17 +43,14 @@ u_long ot[2][OTLEN];
 char pribuff[2][32768];
 char *nextpri;
 
-
-
-
-
+char fndstr[5] = "NOTFN";
 
 // 4bit TIM
-extern unsigned long _binary____TIM_TIM4_tim_start[];
-extern unsigned long _binary____TIM_TIM4_tim_end[];
-extern unsigned long _binary____TIM_TIM4_tim_length;
+// extern unsigned long _binary____TIM_tornabene4_tim_start[];
+// extern unsigned long _binary____TIM_tornabene4_tim_end[];
+// extern unsigned long _binary____TIM_tornabene4_tim_length;
 
-TIM_IMAGE TIM_4;
+// TIM_IMAGE TIM_4;
 
 // helper function to load a texture
 void LoadTexture(u_long * tim, TIM_IMAGE * tparam){
@@ -49,6 +65,35 @@ void LoadTexture(u_long * tim, TIM_IMAGE * tparam){
     }
 }
 
+u_long *LoadFileCD(const char* filename)
+{
+    CdlFILE file;
+    u_long *buffer;
+
+    printf("Reading file %s ... \n", filename);
+
+    //Searching for file
+    if (!CdSearchFile(&file, (char*)filename))
+    {
+        printf("File not found! \n");
+        return NULL;
+    }
+
+    // Allocate a buffer for the file
+    buffer =  (u_long*)malloc(BtoS(file.size) * CD_SECTOR_SIZE);
+
+    // Set seek target
+    CdControl(CdlSetloc, (u_char*)&file.pos, 0);
+
+    // read sectors
+    CdRead( (int)BtoS(file.size), (u_long *)buffer, CdlModeSpeed);
+
+    // wait until loaded
+    CdReadSync(0,0);
+    
+    printf("Load done\n");
+    return buffer;
+}
 
 void display() {
     DrawSync(0); // wait for graphics processing to finish
@@ -101,8 +146,21 @@ void init(void){
     
     // set initial primitive pointer address
     nextpri = pribuff[0];
+
+    // CD init
+    CdInit();
+    InitHeap((u_long *)ramAddr, sizeof(ramAddr));
+    loadFile = "\\DATA.DAT;1";
+    CdSearchFile(&filePos, loadFile);
+
+    loadFileTIM = "\\TORN4.TIM;1";
     
-}   
+    if (CdSearchFile(&filePosTIM, loadFileTIM))
+    {
+        (void)strncpy(fndstr, "FOUND", sizeof(fndstr));
+    }
+}
+
 int main(void)
 {
     TILE *tile;
@@ -125,9 +183,22 @@ int main(void)
     int y_tim = 1;
     int x_dir_tim = 1;
     int y_dir_tim = 1;
-
     init();
-    LoadTexture(_binary____TIM_TIM4_tim_start, &TIM_4);
+    // LoadTexture(_binary____TIM_tornabene4_tim_start, &TIM_4);
+
+    // load DATA.DAT block
+    dataBuffer = malloc(BtoS(filePos.size) * CD_SECTOR_SIZE);
+    CdControl(CdlSetloc, (u_char *)&filePos.pos, CtrlResult);
+    CDreadOK = CdRead( (int)BtoS(filePos.size), (u_long *)dataBuffer, CdlModeSpeed);
+    CDreadResult = CdReadSync(0, 0);
+
+    //load torn4
+    u_long *torn4_image;
+    TIM_IMAGE torn4_tim;
+
+    
+    torn4_image = LoadFileCD("\\TIM\\TORN4.TIM;1");
+    LoadTexture(torn4_image, &torn4_tim);
 
     while (1) {
         ClearOTagR(ot[db], OTLEN); // clear ordering table
@@ -164,11 +235,11 @@ int main(void)
         setXY0(sprt_4b, x_tim, y_tim);
         setRGB0(sprt_4b, 128, 128, 128);
         setWH(sprt_4b, 64, 128);
-        setClut(sprt_4b, TIM_4.crect->x, TIM_4.crect->y);
+        setClut(sprt_4b, torn4_tim.crect->x, torn4_tim.crect->y);
         addPrim(ot[db], sprt_4b);
         nextpri += sizeof(SPRT);
         tpage_4b = (DR_TPAGE*)nextpri;
-        setDrawTPage(tpage_4b, 0, 1, getTPage(TIM_4.mode&0x3, 0, TIM_4.prect->x, TIM_4.prect->y));
+        setDrawTPage(tpage_4b, 0, 1, getTPage(torn4_tim.mode&0x3, 0, torn4_tim.prect->x, torn4_tim.prect->y));
         addPrim(ot[db], tpage_4b);
         nextpri += sizeof(DR_TPAGE);
 
@@ -183,6 +254,12 @@ int main(void)
         FntPrint("tile_0: %d, %d \n", x_tile, y_tile);
         FntPrint("tile_1: %d, %d \n", x_tile2, y_tile2);
         FntPrint("sprite_0: %d, %d \n", sprt_4b->x0, sprt_4b->y0);
+        FntPrint("\n%s%d\n", (char *)dataBuffer, VSync(-1));
+        FntPrint("Heap: %x - Buf: %x\n", ramAddr, dataBuffer);
+        FntPrint("CdCtrl: %d\nRead  : %d %d\n", CtrlResult[0], CDreadOK, CDreadResult);
+        FntPrint("Size: %dB sectors: %d\n", filePos.size, BtoS(filePos.size));
+        FntPrint("tile found state: %s", fndstr);
+        
         FntFlush(-1);
         display();
 
